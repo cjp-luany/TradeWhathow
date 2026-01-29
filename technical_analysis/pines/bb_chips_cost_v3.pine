@@ -1,0 +1,218 @@
+//@version=6
+indicator(
+     shorttitle="BB Chips ATR",
+     title="Bollinger Bands + Chips Avg Cost 50 + ATR Stop Points",
+     overlay=true
+)
+
+//========================
+// Bollinger Bands
+//========================
+bb_length = input.int(26, minval=1, title="BB Length")
+bb_maType = input.string("EMA", "Basis MA Type", options=["SMA", "EMA", "SMMA (RMA)", "WMA", "VWMA"])
+bb_src    = input.source(close, title="BB Source")
+bb_mult   = input.float(2.0, minval=0.001, maxval=50, title="BB StdDev")
+bb_offset = input.int(0, "BB Offset", minval=-500, maxval=500, display=display.data_window)
+
+ma(source, length, _type) =>
+    switch _type
+        "SMA" => ta.sma(source, length)
+        "EMA" => ta.ema(source, length)
+        "SMMA (RMA)" => ta.rma(source, length)
+        "WMA" => ta.wma(source, length)
+        "VWMA" => ta.vwma(source, length)
+
+bb_basis = ma(bb_src, bb_length, bb_maType)
+bb_dev   = bb_mult * ta.stdev(bb_src, bb_length)
+bb_upper = bb_basis + bb_dev
+bb_lower = bb_basis - bb_dev
+
+bb_basisColor = close >= bb_basis ? color.lime : color.red
+plot(bb_basis, "BB Basis", color=bb_basisColor, linewidth=3, offset=bb_offset)
+
+bb_p1 = plot(bb_upper, "BB Upper", color=#F23645, offset=bb_offset)
+bb_p2 = plot(bb_lower, "BB Lower", color=#089981, offset=bb_offset)
+fill(bb_p1, bb_p2, title="BB Background", color=color.rgb(33, 150, 243, 95))
+
+//========================
+// BB Extra Displays (ADD)
+//========================
+
+// 1) 差值逻辑： (上沿-下沿)/2 + 上沿，用浅色蓝色点显示
+bb_width = bb_upper - bb_lower
+bb_width_logic = (bb_width / 2.0) + bb_upper
+
+plot(
+     bb_width_logic,
+     title="(BB Width/2) + Upper",
+     style=plot.style_circles,
+     linewidth=2,
+     color=color.new(color.aqua, 35),
+     offset=bb_offset
+)
+
+// 接近/穿过阈值（±%）
+bb_tol_pct = input.float(1.0, "BB Proximity (%)", minval=0.0, step=0.1) / 100.0
+
+// 三角形样式：颜色 80%（= 20 透明度），size 80%（用更小一档近似）
+tri_alpha = 20
+tri_size_outer = size.small   // 外框(白边) 近似 80%
+tri_size_inner = size.tiny    // 内层近似 80%
+
+// ---- 下沿：绿色三角 + B + 虚线（距离 0.5 倍宽度）----
+near_lower = close >= bb_lower * (1 - bb_tol_pct) and close <= bb_lower * (1 + bb_tol_pct)
+touch_or_below_lower = low <= bb_lower
+bb_lower_mark = near_lower or touch_or_below_lower
+
+bb_mark_dist_mult = 0.7
+bb_marker_y_lower = bb_lower - bb_width * bb_mark_dist_mult
+
+// 白边（三角形外框）
+plotshape(
+     bb_lower_mark ? bb_marker_y_lower : na,
+     title="BB Lower Mark Border",
+     style=shape.triangleup,
+     location=location.absolute,
+     size=tri_size_outer,
+     color=color.new(color.white, tri_alpha),
+     text="",
+     offset=bb_offset
+)
+// 绿色 + B
+plotshape(
+     bb_lower_mark ? bb_marker_y_lower : na,
+     title="Near/Cross BB Lower (B)",
+     style=shape.triangleup,
+     location=location.absolute,
+     size=tri_size_inner,
+     color=color.new(color.green, tri_alpha),
+     text="B",
+     textcolor=color.white,
+     offset=bb_offset
+)
+// 虚线：三角形 -> 下沿
+if bb_lower_mark
+    xLineL = bar_index + bb_offset
+    line.new(
+         x1=xLineL, y1=bb_marker_y_lower,
+         x2=xLineL, y2=bb_lower,
+         xloc=xloc.bar_index,
+         extend=extend.none,
+         color=color.new(color.green, tri_alpha),
+         style=line.style_dashed,
+         width=1
+    )
+
+// ---- 上沿：红色倒三角 + S + 虚线（距离 0.5 倍宽度）----
+near_upper = close >= bb_upper * (1 - bb_tol_pct) and close <= bb_upper * (1 + bb_tol_pct)
+touch_or_above_upper = high >= bb_upper
+bb_upper_mark = near_upper or touch_or_above_upper
+
+bb_marker_y_upper = bb_upper + bb_width * bb_mark_dist_mult
+
+// 白边（三角形外框）
+plotshape(
+     bb_upper_mark ? bb_marker_y_upper : na,
+     title="BB Upper Mark Border",
+     style=shape.triangledown,
+     location=location.absolute,
+     size=tri_size_outer,
+     color=color.new(color.white, tri_alpha),
+     text="",
+     offset=bb_offset
+)
+// 红色 + S（如需显示 B，把 text 改成 "B"）
+plotshape(
+     bb_upper_mark ? bb_marker_y_upper : na,
+     title="Near/Cross BB Upper (S)",
+     style=shape.triangledown,
+     location=location.absolute,
+     size=tri_size_inner,
+     color=color.new(color.red, tri_alpha),
+     text="S",
+     textcolor=color.white,
+     offset=bb_offset
+)
+// 虚线：上沿 -> 倒三角
+if bb_upper_mark
+    xLineU = bar_index + bb_offset
+    line.new(
+         x1=xLineU, y1=bb_upper,
+         x2=xLineU, y2=bb_marker_y_upper,
+         xloc=xloc.bar_index,
+         extend=extend.none,
+         color=color.new(color.red, tri_alpha),
+         style=line.style_dashed,
+         width=1
+    )
+
+//========================
+// Chips Avg Cost 50
+//========================
+chips_len        = input.int(50, "Avg Chips Len", minval=5, maxval=500)
+chips_smooth_len = input.int(3, "Smooth Len", options=[1,2,3,4,5])
+chips_line_col   = input.color(color.new(color.purple, 70), "Chips Line Color")
+chips_line_w     = input.int(2, "Chips Line Width", minval=1, maxval=5)
+
+chipsline(_len) =>
+    w     = math.pow(hl2 - close, 2) * volume
+    denom = math.sum(w, _len)
+    numer = math.sum(w * close, _len)
+    denom == 0 ? na : numer / denom
+
+avg_cost_50 = ta.ema(chipsline(chips_len), chips_smooth_len)
+plot(avg_cost_50, title="Avg Chips Cost (50)", color=chips_line_col, linewidth=chips_line_w)
+
+//========================
+// ATR Stop Loss Finder (points version)
+//========================
+atr_length    = input.int(14, minval=1, title="ATR Length")
+atr_smoothing = input.string("RMA", title="ATR Smoothing", options=["RMA", "SMA", "EMA", "WMA"])
+atr_mult      = input.float(1.5, "ATR Multiplier")
+
+atr_show = input.bool(true, "Show ATR Stop Points")
+
+atr_high_col = color.new(color.fuchsia, 70)
+atr_low_col  = color.new(color.green,   70)
+
+atr_ma(src, len) =>
+    atr_smoothing == "RMA" ? ta.rma(src, len) :
+     atr_smoothing == "SMA" ? ta.sma(src, len) :
+     atr_smoothing == "EMA" ? ta.ema(src, len) :
+     ta.wma(src, len)
+
+atr_val = atr_ma(ta.tr(true), atr_length)
+a  = atr_val * atr_mult
+x  = high + a
+x2 = low  - a
+
+// 仅显示最近5根K线的点状ATR
+atr_last_n = 5
+show_last_n = bar_index >= (last_bar_index - (atr_last_n - 1))
+
+plot(atr_show and show_last_n ? x  : na,
+     title="ATR Short Stop (Last 5 Bars)",
+     style=plot.style_circles,
+     linewidth=2,
+     color=atr_high_col)
+
+plot(atr_show and show_last_n ? x2 : na,
+     title="ATR Long Stop (Last 5 Bars)",
+     style=plot.style_circles,
+     linewidth=2,
+     color=atr_low_col)
+
+//========================
+// ATR Info Table
+//========================
+var Table = table.new(position.bottom_center, 3, 1, border_width=3)
+
+f_fillCell(_table, _column, _row, _value, _label) =>
+    table.cell(_table, _column, _row, _label + str.tostring(_value, "#.#"), text_color=color.blue)
+    table.cell_set_text_color(_table, 1, 0, color.fuchsia)
+    table.cell_set_text_color(_table, 2, 0, color.green)
+
+if barstate.islast
+    f_fillCell(Table, 0, 0, a,  "ATR: ")
+    f_fillCell(Table, 1, 0, x,  "H: ")
+    f_fillCell(Table, 2, 0, x2, "L: ")

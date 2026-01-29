@@ -1,0 +1,17 @@
+study("My KDJ & RSI")
+
+length = input(9, title="period")
+signal = input(3, title="signal")
+hi = highest(high, length)
+lo = lowest(low , length)
+k = 100*((close-lo)/(hi-lo))
+pK = rma(k, signal)
+pD = rma(pK, signal)
+pJ = 3*pK-2*pD
+plot(avg(pK, pD), color=orange, transp=0, linewidth=1, title="KD")
+plot(pJ, color=fuchsia, transp=0, linewidth=1, title="J")
+
+rsi_length = input(14, title="RSI")
+rsi = (rsi(close, rsi_length)-35)*2
+rsi_color = rsi >= 70 or rsi <= 15 ? purple : color(purple, 80)
+plot(rsi, color=rsi_color, transp=0, linewidth=2, style=circles, title="RSI")

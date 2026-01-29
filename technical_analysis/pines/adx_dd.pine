@@ -1,0 +1,59 @@
+//@version=6
+indicator("DMI/ADX + KEYLEVEL + Drawdown/Max Drawdown (v6)", shorttitle="DMI+DD v6", overlay=false)
+
+//====================
+// Inputs (DMI / ADX)
+//====================
+adxLen   = input.int(14,  "ADX Smoothing", minval=1)
+diLen    = input.int(14,  "DI Length",     minval=1)
+keyLevel = input.float(23, "Key Level for ADX")
+
+//====================
+// Inputs (Drawdown)
+//====================
+highValue = input.source(high,  "High Source (ATH)")
+lowValue  = input.source(close, "Low Source (DD)")
+
+//====================
+// DMI / ADX functions
+//====================
+dirmov(_len) =>
+    up   = ta.change(high)
+    down = -ta.change(low)
+    trur = ta.rma(ta.tr(true), _len)
+    plus  = nz(100 * ta.rma((up > down and up > 0)   ? up   : 0.0, _len) / trur)
+    minus = nz(100 * ta.rma((down > up and down > 0) ? down : 0.0, _len) / trur)
+    [plus, minus]
+
+adx(_diLen, _adxLen) =>
+    [plus, minus] = dirmov(_diLen)
+    sum = plus + minus
+    adxVal = 100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), _adxLen)
+    [adxVal, plus, minus]
+
+// Calculate
+[adxSig, diPlus, diMinus] = adx(diLen, adxLen)
+
+//====================
+// Drawdown calculations (no ta.cummax)
+//====================
+// ATH (All-Time-High) of chosen high source
+var float ath = na
+ath := na(ath[1]) ? highValue : math.max(highValue, ath[1])
+
+drawdown = 100 - (lowValue / ath) * 100
+
+// Max drawdown (cumulative maximum of drawdown)
+var float maxDrawdown = na
+maxDrawdown := na(maxDrawdown[1]) ? drawdown : math.max(drawdown, maxDrawdown[1])
+
+//====================
+// Plots
+//====================
+plot(adxSig,   color=color.red,  title="ADX")
+plot(diPlus,   color=color.blue, title="+DI")
+plot(diMinus,  color=color.gray, title="-DI")
+plot(keyLevel, color=color.white, title="Key Level")
+
+plot(maxDrawdown, color=color.new(color.purple, 70), linewidth=4, title="Max Drawdown")
+plot(drawdown,    color=color.orange,  title="Drawdown")
